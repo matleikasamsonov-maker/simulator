@@ -1,0 +1,2387 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Фронтовой Рубеж — Тактический Симулятор</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap');
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0d110e;
+            color: #d4dcd3;
+            font-family: 'JetBrains Mono', monospace;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Тактическая сетка и эффекты планшета */
+        .tactical-panel {
+            background: rgba(18, 24, 19, 0.94);
+            border: 1px solid #38473a;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 15px rgba(74, 103, 77, 0.15);
+            backdrop-filter: blur(6px);
+        }
+
+        .tactical-btn {
+            background: linear-gradient(180deg, #2b382d 0%, #1d261e 100%);
+            border: 1px solid #4d6350;
+            color: #e2ebe1;
+            transition: all 0.15s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+        }
+
+        .tactical-btn:hover:not(:disabled) {
+            background: linear-gradient(180deg, #3a4d3d 0%, #263328 100%);
+            border-color: #7ca381;
+            box-shadow: 0 0 12px rgba(124, 163, 129, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .tactical-btn:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        .tactical-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .tactical-btn-active {
+            background: linear-gradient(180deg, #3d5940 0%, #263b28 100%) !important;
+            border-color: #8ee096 !important;
+            box-shadow: 0 0 14px rgba(142, 224, 150, 0.4) !important;
+            color: #ffffff !important;
+        }
+
+        .scanline {
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.18) 50%,
+                rgba(0,0,0,0.18)
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+        }
+
+        /* Кастомный скроллбар для меню */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #111712;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3b4d3d;
+            border-radius: 3px;
+        }
+
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+    </style>
+</head>
+<body class="relative w-full h-full">
+
+    <!-- Игровой Canvas -->
+    <canvas id="gameCanvas" class="w-full h-full"></canvas>
+
+    <!-- Эффект сканлайнов тактического экрана -->
+    <div class="scanline fixed inset-0 z-10 pointer-events-none"></div>
+
+    <!-- ВЕРХНИЙ HUD (Виден во время боя) -->
+    <div id="hudTop" class="hidden fixed top-3 left-3 right-3 z-20 flex flex-wrap justify-between items-start gap-3 pointer-events-none">
+        <!-- Левый блок: Статус бойца -->
+        <div class="tactical-panel rounded-lg p-3 pointer-events-auto min-w-[260px] sm:min-w-[300px]">
+            <div class="flex justify-between items-center mb-2 border-b border-[#2e3b30] pb-1">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="hudClassTitle" class="font-bold text-sm text-emerald-300 tracking-wider">ШТУРМОВИК</span>
+                </div>
+                <span id="hudMoney" class="font-bold text-amber-400 text-sm">1500 ₽</span>
+            </div>
+
+            <!-- Полоски HP, Брони, Выносливости -->
+            <div class="space-y-1.5 text-xs">
+                <div>
+                    <div class="flex justify-between mb-0.5">
+                        <span class="text-gray-300">ЗДОРОВЬЕ (HP)</span>
+                        <span id="hudHpText" class="font-bold text-emerald-400">100 / 100</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-[#0b0f0c] rounded overflow-hidden border border-[#2d3b2f]">
+                        <div id="hudHpBar" class="h-full bg-emerald-500 transition-all duration-150" style="width: 100%"></div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between mb-0.5">
+                        <span class="text-gray-300">БРОНЕЖИЛЕТ</span>
+                        <span id="hudArmorText" class="font-bold text-sky-400">50 / 100</span>
+                    </div>
+                    <div class="w-full h-2 bg-[#0b0f0c] rounded overflow-hidden border border-[#2d3b2f]">
+                        <div id="hudArmorBar" class="h-full bg-sky-500 transition-all duration-150" style="width: 50%"></div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between mb-0.5">
+                        <span class="text-gray-300">ВЫНОСЛИВОСТЬ</span>
+                        <span id="hudStaminaText" class="font-bold text-amber-300">100%</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-[#0b0f0c] rounded overflow-hidden border border-[#2d3b2f]">
+                        <div id="hudStaminaBar" class="h-full bg-amber-400 transition-all duration-75" style="width: 100%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Статистика рейда -->
+            <div class="grid grid-cols-3 gap-1 mt-2.5 pt-2 border-t border-[#2e3b30] text-center text-[11px]">
+                <div class="bg-[#111712] p-1 rounded">
+                    <div class="text-gray-400">ФРАГИ</div>
+                    <div id="hudKills" class="font-bold text-red-400 text-xs">0</div>
+                </div>
+                <div class="bg-[#111712] p-1 rounded">
+                    <div class="text-gray-400">ЗАДАЧИ</div>
+                    <div id="hudQuestsDone" class="font-bold text-emerald-400 text-xs">0</div>
+                </div>
+                <div class="bg-[#111712] p-1 rounded">
+                    <div class="text-gray-400">ВРЕМЯ</div>
+                    <div id="hudTime" class="font-bold text-gray-200 text-xs">00:00</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Центральный блок: Журнал боевой задачи и оповещения -->
+        <div class="flex flex-col items-center gap-2 max-w-md w-full">
+            <div class="tactical-panel rounded-lg p-3 w-full">
+                <div class="flex justify-between items-center text-xs text-amber-400 font-bold mb-1">
+                    <span>[ ТЕКУЩИЙ КОНТРАКТ ]</span>
+                    <span id="hudQuestReward">+800 ₽</span>
+                </div>
+                <div id="hudQuestTitle" class="text-sm font-bold text-white mb-0.5">Загрузка данных...</div>
+                <div id="hudQuestDesc" class="text-xs text-gray-300 leading-relaxed">Ожидание приказа командования.</div>
+                <div class="mt-2 flex items-center justify-between text-[11px]">
+                    <span id="hudQuestProgress" class="text-emerald-400 font-semibold">Прогресс: 0/1</span>
+                    <span id="hudQuestDist" class="text-gray-400">Дистанция: -- м</span>
+                </div>
+            </div>
+
+            <!-- Всплывающее тактическое сообщение (Рация / Предупреждения) -->
+            <div id="radioAlert" class="hidden tactical-panel border-amber-500/70 bg-amber-950/80 text-amber-200 px-4 py-2 rounded-lg text-xs font-bold tracking-wide text-center shadow-lg transition-all">
+                ВНИМАНИЕ! ЗАФИКСИРОВАН ВРАЖЕСКИЙ FPV-ДРОН!
+            </div>
+        </div>
+
+        <!-- Правый блок: Мини-карта и кнопки управления -->
+        <div class="flex flex-col items-end gap-2 pointer-events-auto">
+            <div class="tactical-panel rounded-lg p-2 relative">
+                <canvas id="minimapCanvas" width="160" height="160" class="rounded border border-[#38473a] bg-[#0a0e0b]"></canvas>
+                <div class="flex justify-between items-center mt-1.5 text-[10px] text-gray-400 px-1">
+                    <span>РАДАР: АКТИВЕН</span>
+                    <span id="hudDetectorStatus" class="text-emerald-400 hidden">РЭБ-ДЕТЕКТОР</span>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <button id="btnToggleSound" onclick="toggleAudio()" class="tactical-btn px-3 py-1.5 rounded text-xs font-bold">
+                    🔊 ЗВУК: ВКЛ
+                </button>
+                <button id="btnOpenBase" onclick="openBaseModal()" class="tactical-btn px-3 py-1.5 rounded text-xs font-bold border-amber-500/60 text-amber-300 hidden">
+                    🏕️ БАЗА / МАГАЗИН
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- НИЖНИЙ HUD: Оружие и быстрые слоты (1-4) -->
+    <div id="hudBottom" class="hidden fixed bottom-3 left-3 right-3 z-20 flex flex-wrap justify-between items-end gap-3 pointer-events-none">
+        <!-- Слоты снаряжения -->
+        <div class="tactical-panel rounded-lg p-2.5 flex gap-2 pointer-events-auto mx-auto sm:mx-0">
+            <button onclick="useSlot(1)" class="tactical-btn rounded p-2 w-20 sm:w-24 flex flex-col items-center relative">
+                <span class="absolute top-1 left-1.5 text-[10px] text-amber-400 font-bold">[1]</span>
+                <span class="text-lg">🩹</span>
+                <span class="text-[10px] font-bold mt-0.5">АПТЕЧКА</span>
+                <span id="slotMedkit" class="text-xs text-emerald-400 font-bold">2</span>
+            </button>
+
+            <button onclick="useSlot(2)" class="tactical-btn rounded p-2 w-20 sm:w-24 flex flex-col items-center relative">
+                <span class="absolute top-1 left-1.5 text-[10px] text-amber-400 font-bold">[2]</span>
+                <span class="text-lg">🛡️</span>
+                <span class="text-[10px] font-bold mt-0.5">ПЛАСТИНА</span>
+                <span id="slotPlate" class="text-xs text-sky-400 font-bold">1</span>
+            </button>
+
+            <button onclick="useSlot(3)" class="tactical-btn rounded p-2 w-20 sm:w-24 flex flex-col items-center relative">
+                <span class="absolute top-1 left-1.5 text-[10px] text-amber-400 font-bold">[3]</span>
+                <span class="text-lg">💣</span>
+                <span class="text-[10px] font-bold mt-0.5">ГРАНАТА</span>
+                <span id="slotGrenade" class="text-xs text-orange-400 font-bold">2</span>
+            </button>
+
+            <button onclick="useSlot(4)" id="btnSlotDrone" class="tactical-btn rounded p-2 w-20 sm:w-24 flex flex-col items-center relative">
+                <span class="absolute top-1 left-1.5 text-[10px] text-amber-400 font-bold">[4]</span>
+                <span class="text-lg">🛸</span>
+                <span id="slotDroneLabel" class="text-[10px] font-bold mt-0.5">БПЛА / РЭБ</span>
+                <span id="slotDroneStatus" class="text-xs text-purple-400 font-bold">ГОТОВ</span>
+            </button>
+        </div>
+
+        <!-- Боезапас и управление -->
+        <div class="tactical-panel rounded-lg p-3 pointer-events-auto flex items-center gap-4 mx-auto sm:mx-0">
+            <div>
+                <div class="text-[10px] text-gray-400 uppercase">Боекомплект</div>
+                <div class="flex items-baseline gap-1.5">
+                    <span id="hudMagAmmo" class="text-2xl font-extrabold text-white">30</span>
+                    <span class="text-gray-500">/</span>
+                    <span id="hudReserveAmmo" class="text-sm font-bold text-amber-400">120</span>
+                </div>
+                <div id="hudReloading" class="hidden text-[10px] text-amber-400 font-bold animate-pulse">ПЕРЕЗАРЯДКА [R]...</div>
+            </div>
+            <div class="hidden md:block text-[10px] text-gray-400 border-l border-[#2e3b30] pl-3 space-y-0.5">
+                <div><span class="text-gray-200 font-bold">WASD</span> — Движение</div>
+                <div><span class="text-gray-200 font-bold">ЛКМ</span> — Огонь | <span class="text-gray-200 font-bold">R</span> — Перезарядка</div>
+                <div><span class="text-gray-200 font-bold">ПРОБЕЛ</span> — Тактический рывок</div>
+                <div><span class="text-gray-200 font-bold">E</span> — Обыскать ящик / База</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ЭКРАН ПОДГОТОВКИ К РЕЙДУ (СТАРТОВОЕ МЕНЮ) -->
+    <div id="setupScreen" class="fixed inset-0 z-30 flex items-center justify-center p-3 sm:p-6 bg-[#090c0a]/95 overflow-y-auto">
+        <div class="tactical-panel rounded-xl max-w-5xl w-full p-4 sm:p-6 my-auto">
+            <!-- Шапка планшета -->
+            <div class="flex flex-wrap justify-between items-center border-b border-[#38473a] pb-4 mb-5 gap-3">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 bg-emerald-900/60 border border-emerald-500/50 text-emerald-300 text-xs font-bold rounded">ТАКТИЧЕСКИЙ ПЛАНШЕТ v2.4</span>
+                        <span class="text-xs text-gray-400">СЕКТОР «РУБЕЖ»</span>
+                    </div>
+                    <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mt-1">ФРОНТОВОЙ РУБЕЖ</h1>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="text-xs text-gray-400">СТАРТОВЫЙ БЮДЖЕТ</div>
+                        <div id="setupMoney" class="text-2xl font-extrabold text-amber-400">1500 ₽</div>
+                    </div>
+                    <div class="text-right border-l border-[#38473a] pl-4">
+                        <div class="text-xs text-gray-400">ОЧКИ НАВЫКОВ</div>
+                        <div id="setupSkillPoints" class="text-2xl font-extrabold text-emerald-400">2</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <!-- Колонка 1: Выбор специализации -->
+                <div class="bg-[#111712] border border-[#2c382e] rounded-lg p-4 flex flex-col">
+                    <h2 class="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <span>1. СПЕЦИАЛИЗАЦИЯ БОЙЦА</span>
+                    </h2>
+                    <div class="space-y-2.5 flex-1">
+                        <div onclick="selectClass('assault')" id="class-assault" class="tactical-btn tactical-btn-active p-3 rounded-lg text-left">
+                            <div class="flex justify-between items-center font-bold text-sm">
+                                <span>⚔️ ШТУРМОВИК</span>
+                                <span class="text-[10px] px-1.5 py-0.5 bg-black/40 rounded text-emerald-300">БОЙ</span>
+                            </div>
+                            <p class="text-[11px] text-gray-300 mt-1 normal-case leading-snug">
+                                Повышенный урон (+25%), усиленная стартовая броня (75 ед.) и вместительный магазин АК-74М.
+                            </p>
+                        </div>
+
+                        <div onclick="selectClass('drone')" id="class-drone" class="tactical-btn p-3 rounded-lg text-left">
+                            <div class="flex justify-between items-center font-bold text-sm">
+                                <span>🛸 ОПЕРАТОР БПЛА</span>
+                                <span class="text-[10px] px-1.5 py-0.5 bg-black/40 rounded text-purple-300">РАЗВЕДКА/УДАР</span>
+                            </div>
+                            <p class="text-[11px] text-gray-300 mt-1 normal-case leading-snug">
+                                Нажимайте [4] для запуска ударного FPV-дрона с дистанционным подрывом и разведкой тумана войны.
+                            </p>
+                        </div>
+
+                        <div onclick="selectClass('supplier')" id="class-supplier" class="tactical-btn p-3 rounded-lg text-left">
+                            <div class="flex justify-between items-center font-bold text-sm">
+                                <span>📦 СНАБЖЕНЕЦ</span>
+                                <span class="text-[10px] px-1.5 py-0.5 bg-black/40 rounded text-amber-300">ЛОГИСТИКА</span>
+                            </div>
+                            <p class="text-[11px] text-gray-300 mt-1 normal-case leading-snug">
+                                Награда за квесты +50%, скидка 25% в магазине, увеличенный боезапас и доп. медикаменты.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Колонка 2: Древо стартовых навыков -->
+                <div class="bg-[#111712] border border-[#2c382e] rounded-lg p-4 flex flex-col">
+                    <h2 class="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">
+                        2. НАВЫКИ ПОДГОТОВКИ
+                    </h2>
+                    <div class="space-y-2.5 flex-1">
+                        <!-- Навык: Внимательность -->
+                        <div class="bg-[#18211a] border border-[#324034] p-3 rounded-lg">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-sm text-white">👁️ Внимательность</span>
+                                <span id="skill-awareness-lvl" class="text-xs font-bold text-emerald-400">Ур. 0 / 2</span>
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">
+                                Расширяет сектор обзора, подсвечивает мины, растяжки и ящики с лутом сквозь укрытия.
+                            </p>
+                            <div class="mt-2 flex gap-2">
+                                <button onclick="upgradeSkill('awareness')" id="btn-skill-awareness" class="tactical-btn px-2.5 py-1 rounded text-xs font-bold w-full">
+                                    + ИЗУЧИТЬ (1 ОЧКО)
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Навык: Живучесть -->
+                        <div class="bg-[#18211a] border border-[#324034] p-3 rounded-lg">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-sm text-white">❤️ Живучесть</span>
+                                <span id="skill-vitality-lvl" class="text-xs font-bold text-emerald-400">Ур. 0 / 2</span>
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">
+                                Увеличивает максимальный запас здоровья (+30 HP за уровень) и эффективность аптечек.
+                            </p>
+                            <div class="mt-2 flex gap-2">
+                                <button onclick="upgradeSkill('vitality')" id="btn-skill-vitality" class="tactical-btn px-2.5 py-1 rounded text-xs font-bold w-full">
+                                    + ИЗУЧИТЬ (1 ОЧКО)
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Навык: Спринтер -->
+                        <div class="bg-[#18211a] border border-[#324034] p-3 rounded-lg">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-sm text-white">⚡ Спринтер</span>
+                                <span id="skill-agility-lvl" class="text-xs font-bold text-emerald-400">Ур. 0 / 2</span>
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1">
+                                Повышает скорость бега (+15%), ускоряет восстановление выносливости и рывка от дронов.
+                            </p>
+                            <div class="mt-2 flex gap-2">
+                                <button onclick="upgradeSkill('agility')" id="btn-skill-agility" class="tactical-btn px-2.5 py-1 rounded text-xs font-bold w-full">
+                                    + ИЗУЧИТЬ (1 ОЧКО)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Колонка 3: Закупка снаряжения -->
+                <div class="bg-[#111712] border border-[#2c382e] rounded-lg p-4 flex flex-col">
+                    <h2 class="text-sm font-bold text-amber-400 uppercase tracking-wider mb-3">
+                        3. СКЛАД СНАРЯЖЕНИЯ
+                    </h2>
+                    <div id="setupShopList" class="space-y-2 flex-1 overflow-y-auto max-h-[300px] pr-1">
+                        <!-- Генерируется через JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Нижняя панель запуска -->
+            <div class="mt-6 pt-4 border-t border-[#38473a] flex flex-wrap justify-between items-center gap-4">
+                <div class="text-xs text-gray-400 max-w-xl">
+                    <span class="text-amber-400 font-bold">ЗАДАЧА ОПЕРАЦИИ:</span> Выполняйте контракты командования (доставка грузов, зачистка секторов, разведка), избегайте FPV-дронов, минных полей и минометных обстрелов. Возвращайтесь на базу для пополнения припасов.
+                </div>
+                <button onclick="startGame()" class="tactical-btn tactical-btn-active px-8 py-3.5 rounded-lg font-extrabold text-base tracking-wider shadow-lg">
+                    ВЫДВИНУТЬСЯ НА ПОЗИЦИЮ ►
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО БАЗЫ / ПОЛЕВОГО СКЛАДА ВО ВРЕМЯ ИГРЫ -->
+    <div id="baseModal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/80">
+        <div class="tactical-panel rounded-xl max-w-2xl w-full p-5">
+            <div class="flex justify-between items-center border-b border-[#38473a] pb-3 mb-4">
+                <div>
+                    <h2 class="text-xl font-extrabold text-emerald-400">🏕️ ПОЛЕВОЙ ОПОРНЫЙ ПУНКТ</h2>
+                    <p class="text-xs text-gray-400">Безопасная зона. Пополнение БК, ремонт брони и обучение.</p>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs text-gray-400">БАЛАНС</div>
+                    <div id="baseMoney" class="text-xl font-extrabold text-amber-400">0 ₽</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <h3 class="text-xs font-bold text-amber-400 uppercase mb-2">Закупка припасов</h3>
+                    <div id="baseShopList" class="space-y-2"></div>
+                </div>
+                <div>
+                    <h3 class="text-xs font-bold text-emerald-400 uppercase mb-2">Полевая подготовка (Навыки)</h3>
+                    <div id="baseSkillList" class="space-y-2"></div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-3 border-t border-[#38473a]">
+                <button onclick="closeBaseModal()" class="tactical-btn tactical-btn-active px-6 py-2.5 rounded-lg font-bold text-sm">
+                    ВЕРНУТЬСЯ В БОЙ ◄
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ЭКРАН ЗАВЕРШЕНИЯ РЕЙДА (ГИБЕЛЬ БОЙЦА) -->
+    <div id="gameOverModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90">
+        <div class="tactical-panel border-red-500/60 rounded-xl max-w-lg w-full p-6 text-center">
+            <div class="inline-block px-3 py-1 bg-red-950/80 border border-red-500/50 text-red-400 text-xs font-bold rounded mb-3">
+                СВЯЗЬ С БОЙЦОМ ПОТЕРЯНА
+            </div>
+            <h2 class="text-3xl font-extrabold text-white mb-2">ВЫ ПОГИБЛИ В БОЮ</h2>
+            <p id="deathReason" class="text-sm text-gray-300 mb-5">Причина: Прямое попадание вражеского FPV-дрона.</p>
+
+            <div class="grid grid-cols-2 gap-3 bg-[#111712] p-4 rounded-lg border border-[#2e3b30] mb-6 text-left">
+                <div>
+                    <div class="text-[11px] text-gray-400">ВРЕМЯ ВЫЖИВАНИЯ</div>
+                    <div id="endTime" class="text-lg font-bold text-white">03:45</div>
+                </div>
+                <div>
+                    <div class="text-[11px] text-gray-400">УНИЧТОЖЕНО ВРАГОВ</div>
+                    <div id="endKills" class="text-lg font-bold text-red-400">12</div>
+                </div>
+                <div>
+                    <div class="text-[11px] text-gray-400">ВЫПОЛНЕНО КОНТРАКТОВ</div>
+                    <div id="endQuests" class="text-lg font-bold text-emerald-400">3</div>
+                </div>
+                <div>
+                    <div class="text-[11px] text-gray-400">ЗАРАБОТАНО СРЕДСТВ</div>
+                    <div id="endEarned" class="text-lg font-bold text-amber-400">4200 ₽</div>
+                </div>
+            </div>
+
+            <button onclick="resetToSetup()" class="tactical-btn tactical-btn-active w-full py-3 rounded-lg font-extrabold text-sm">
+                НАЧАТЬ НОВЫЙ РЕЙД
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * 1. ПРОЦЕДУРНЫЙ АУДИО-СИНТЕЗАТОР (WEB AUDIO API)
+         * Генерация всех звуков без внешних файлов: выстрелы, взрывы, жужжание FPV,
+         * шаги, сигналы рации, подбор лута.
+         * ============================================================================
+         */
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+                this.droneOsc = null;
+                this.droneGain = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioCtx();
+                    this.setupDroneHum();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            // Постоянный генератор жужжания приближающегося FPV-дрона
+            setupDroneHum() {
+                if (!this.ctx) return;
+                this.droneOsc = this.ctx.createOscillator();
+                const filter = this.ctx.createBiquadFilter();
+                this.droneGain = this.ctx.createGain();
+
+                this.droneOsc.type = 'sawtooth';
+                this.droneOsc.frequency.value = 135;
+
+                filter.type = 'bandpass';
+                filter.frequency.value = 420;
+                filter.Q.value = 3;
+
+                this.droneGain.gain.value = 0;
+
+                this.droneOsc.connect(filter);
+                filter.connect(this.droneGain);
+                this.droneGain.connect(this.ctx.destination);
+                this.droneOsc.start();
+            }
+
+            updateDroneProximity(minDistance, isPlayerDroneActive) {
+                if (!this.ctx || !this.droneGain || !this.enabled) {
+                    if (this.droneGain) this.droneGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+                    return;
+                }
+                let vol = 0;
+                let freq = 135;
+                if (minDistance < 550) {
+                    const factor = 1 - (minDistance / 550);
+                    vol = Math.pow(factor, 1.8) * 0.22;
+                    freq = 130 + factor * 95; // Эффект Доплера при приближении
+                }
+                if (isPlayerDroneActive && vol < 0.06) {
+                    vol = 0.06;
+                    freq = 165;
+                }
+                this.droneGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.08);
+                this.droneOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.08);
+            }
+
+            playShot(isPlayer = true) {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+
+                // Шумовой щелчок затвора и пороховых газов
+                const bufferSize = this.ctx.sampleRate * 0.12;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.025));
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(isPlayer ? 2400 : 1600, now);
+                filter.frequency.exponentialRampToValueAtTime(300, now + 0.11);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(isPlayer ? 0.25 : 0.14, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start(now);
+            }
+
+            playExplosion(volume = 0.45) {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+
+                // Низкочастотный удар
+                const osc = this.ctx.createOscillator();
+                const oscGain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(110, now);
+                osc.frequency.exponentialRampToValueAtTime(22, now + 0.55);
+
+                oscGain.gain.setValueAtTime(volume, now);
+                oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+                osc.connect(oscGain);
+                oscGain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.6);
+
+                // Грохот осколков
+                const bufferSize = this.ctx.sampleRate * 0.65;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.18));
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(850, now);
+                filter.frequency.exponentialRampToValueAtTime(120, now + 0.6);
+
+                const nGain = this.ctx.createGain();
+                nGain.gain.setValueAtTime(volume * 0.9, now);
+                nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+                noise.connect(filter);
+                filter.connect(nGain);
+                nGain.connect(this.ctx.destination);
+                noise.start(now);
+            }
+
+            playRadioBeep() {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(980, now);
+                osc.frequency.setValueAtTime(1320, now + 0.07);
+
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.18);
+            }
+
+            playLootPickup() {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(440, now);
+                osc.frequency.exponentialRampToValueAtTime(880, now + 0.14);
+
+                gain.gain.setValueAtTime(0.12, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.15);
+            }
+
+            playStep() {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(75 + Math.random() * 20, now);
+                osc.frequency.exponentialRampToValueAtTime(30, now + 0.05);
+
+                gain.gain.setValueAtTime(0.04, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.055);
+            }
+        }
+
+        const sound = new SoundEngine();
+
+        function toggleAudio() {
+            sound.init();
+            sound.enabled = !sound.enabled;
+            const btn = document.getElementById('btnToggleSound');
+            btn.textContent = sound.enabled ? '🔊 ЗВУК: ВКЛ' : '🔇 ЗВУК: ВЫКЛ';
+            if (!sound.enabled) sound.updateDroneProximity(9999, false);
+        }
+
+        /**
+         * ============================================================================
+         * 2. КОНФИГУРАЦИЯ ИГРЫ, КЛАССОВ, НАВЫКОВ И МАГАЗИНА
+         * ============================================================================
+         */
+        const WORLD_SIZE = 3200; // Размер тактической карты 3200x3200 px
+        const BASE_POS = { x: 420, y: 420, radius: 140 };
+
+        const CLASSES = {
+            assault: {
+                id: 'assault',
+                name: 'ШТУРМОВИК',
+                hp: 110,
+                armor: 75,
+                damageMult: 1.25,
+                speedMult: 1.0,
+                magSize: 45,
+                reserveAmmo: 150,
+                medkits: 2,
+                plates: 2,
+                grenades: 2,
+                questMult: 1.0,
+                shopDiscount: 1.0
+            },
+            drone: {
+                id: 'drone',
+                name: 'ОПЕРАТОР БПЛА',
+                hp: 100,
+                armor: 40,
+                damageMult: 1.0,
+                speedMult: 1.05,
+                magSize: 30,
+                reserveAmmo: 120,
+                medkits: 2,
+                plates: 1,
+                grenades: 1,
+                questMult: 1.15,
+                shopDiscount: 1.0
+            },
+            supplier: {
+                id: 'supplier',
+                name: 'СНАБЖЕНЕЦ',
+                hp: 105,
+                armor: 50,
+                damageMult: 0.95,
+                speedMult: 1.05,
+                magSize: 30,
+                reserveAmmo: 180,
+                medkits: 3,
+                plates: 2,
+                grenades: 2,
+                questMult: 1.5,
+                shopDiscount: 0.75
+            }
+        };
+
+        const SHOP_ITEMS = [
+            { id: 'medkit', name: '🩹 Полевая аптечка', desc: '+50 HP', price: 200 },
+            { id: 'plate', name: '🛡️ Бронепластина', desc: '+50 Брони', price: 250 },
+            { id: 'ammo', name: '🔫 Цинк патронов', desc: '+90 патронов', price: 150 },
+            { id: 'grenade', name: '💣 Граната Ф-1', desc: '+1 граната', price: 220 },
+            { id: 'detector', name: '📡 Детектор дронов «Булат»', desc: 'Раннее оповещение об FPV', price: 450, unique: true }
+        ];
+
+        // Состояние подготовки до старта
+        let setupState = {
+            selectedClass: 'assault',
+            money: 1500,
+            skillPoints: 2,
+            skills: { awareness: 0, vitality: 0, agility: 0 },
+            purchases: { medkit: 0, plate: 0, ammo: 0, grenade: 0, detector: false }
+        };
+
+        // Главный объект состояния игры
+        let game = {
+            running: false,
+            paused: false,
+            time: 0,
+            totalEarned: 0,
+            kills: 0,
+            questsCompleted: 0,
+            camera: { x: 0, y: 0, shake: 0 },
+            mouse: { x: 0, y: 0, worldX: 0, worldY: 0, down: false },
+            keys: {},
+            player: null,
+            playerDrone: null, // Управляемый дрон игрока
+            bullets: [],
+            grenades: [],
+            enemies: [],
+            fpvDrones: [],
+            mines: [],
+            artilleryZones: [],
+            crates: [],
+            obstacles: [], // Здания, окопы, леса
+            particles: [],
+            floatingTexts: [],
+            quest: null,
+            timers: {
+                enemySpawn: 0,
+                droneSpawn: 8,
+                artillerySpawn: 15,
+                stepSound: 0,
+                droneCooldown: 0
+            }
+        };
+
+        /**
+         * ============================================================================
+         * 3. ЛОГИКА МЕНЮ ПОДГОТОВКИ И МАГАЗИНА
+         * ============================================================================
+         */
+        function selectClass(classId) {
+            sound.init();
+            sound.playRadioBeep();
+            setupState.selectedClass = classId;
+            ['assault', 'drone', 'supplier'].forEach(id => {
+                const el = document.getElementById(`class-${id}`);
+                if (id === classId) el.classList.add('tactical-btn-active');
+                else el.classList.remove('tactical-btn-active');
+            });
+            renderSetupShop();
+        }
+
+        function upgradeSkill(skillId) {
+            sound.init();
+            if (setupState.skillPoints > 0 && setupState.skills[skillId] < 2) {
+                setupState.skills[skillId]++;
+                setupState.skillPoints--;
+                sound.playLootPickup();
+                updateSetupUI();
+            }
+        }
+
+        function buySetupItem(itemId) {
+            sound.init();
+            const item = SHOP_ITEMS.find(i => i.id === itemId);
+            const discount = CLASSES[setupState.selectedClass].shopDiscount;
+            const finalPrice = Math.round(item.price * discount);
+
+            if (item.unique && setupState.purchases[itemId]) return;
+            if (setupState.money >= finalPrice) {
+                setupState.money -= finalPrice;
+                if (item.unique) setupState.purchases[itemId] = true;
+                else setupState.purchases[itemId]++;
+                sound.playLootPickup();
+                updateSetupUI();
+            }
+        }
+
+        function renderSetupShop() {
+            const container = document.getElementById('setupShopList');
+            const discount = CLASSES[setupState.selectedClass].shopDiscount;
+            container.innerHTML = '';
+
+            SHOP_ITEMS.forEach(item => {
+                const price = Math.round(item.price * discount);
+                const owned = item.unique
+                    ? (setupState.purchases[item.id] ? 'КУПЛЕНО' : 'НЕТ')
+                    : `${setupState.purchases[item.id]} шт.`;
+                const disabled = (item.unique && setupState.purchases[item.id]) || setupState.money < price;
+
+                const div = document.createElement('div');
+                div.className = 'bg-[#18211a] border border-[#324034] p-2.5 rounded-lg flex justify-between items-center gap-2';
+                div.innerHTML = `
+                    <div>
+                        <div class="text-xs font-bold text-white">${item.name}</div>
+                        <div class="text-[10px] text-gray-400">${item.desc} • В запасе: <span class="text-emerald-400">${owned}</span></div>
+                    </div>
+                    <button onclick="buySetupItem('${item.id}')" ${disabled ? 'disabled' : ''} class="tactical-btn px-2.5 py-1.5 rounded text-xs font-bold whitespace-nowrap text-amber-300">
+                        ${price} ₽
+                    </button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function updateSetupUI() {
+            document.getElementById('setupMoney').textContent = `${setupState.money} ₽`;
+            document.getElementById('setupSkillPoints').textContent = setupState.skillPoints;
+
+            ['awareness', 'vitality', 'agility'].forEach(sk => {
+                const lvl = setupState.skills[sk];
+                document.getElementById(`skill-${sk}-lvl`).textContent = `Ур. ${lvl} / 2`;
+                const btn = document.getElementById(`btn-skill-${sk}`);
+                if (lvl >= 2) {
+                    btn.textContent = 'МАКС. УРОВЕНЬ';
+                    btn.disabled = true;
+                } else {
+                    btn.textContent = '+ ИЗУЧИТЬ (1 ОЧКО)';
+                    btn.disabled = setupState.skillPoints <= 0;
+                }
+            });
+
+            renderSetupShop();
+        }
+
+        /**
+         * ============================================================================
+         * 4. ИНИЦИАЛИЗАЦИЯ ИГРОВОГО МИРА И КАРТЫ
+         * ============================================================================
+         */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const minimapCanvas = document.getElementById('minimapCanvas');
+        const mCtx = minimapCanvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function generateWorld() {
+            game.obstacles = [];
+            game.mines = [];
+            game.crates = [];
+            game.enemies = [];
+            game.fpvDrones = [];
+            game.artilleryZones = [];
+            game.bullets = [];
+            game.grenades = [];
+            game.particles = [];
+            game.floatingTexts = [];
+
+            // Генерация разрушенных зданий, бетонных укрытий и лесополос
+            for (let i = 0; i < 65; i++) {
+                const isForest = Math.random() < 0.45;
+                const w = isForest ? 110 + Math.random() * 140 : 80 + Math.random() * 130;
+                const h = isForest ? 110 + Math.random() * 140 : 70 + Math.random() * 120;
+                const x = 180 + Math.random() * (WORLD_SIZE - 450);
+                const y = 180 + Math.random() * (WORLD_SIZE - 450);
+
+                // Не спавним препятствия прямо на базе
+                if (Math.hypot(x - BASE_POS.x, y - BASE_POS.y) < 320) continue;
+
+                game.obstacles.push({
+                    x, y, w, h,
+                    type: isForest ? 'forest' : 'ruin'
+                });
+            }
+
+            // Генерация ящиков с лутом (28 штук по карте)
+            for (let i = 0; i < 28; i++) {
+                spawnCrate();
+            }
+
+            // Генерация минных полей и растяжек (35 штук)
+            for (let i = 0; i < 35; i++) {
+                const x = 350 + Math.random() * (WORLD_SIZE - 500);
+                const y = 350 + Math.random() * (WORLD_SIZE - 500);
+                if (Math.hypot(x - BASE_POS.x, y - BASE_POS.y) < 420) continue;
+                game.mines.push({
+                    x, y,
+                    radius: 14,
+                    triggered: false
+                });
+            }
+
+            // Начальные вражеские патрули
+            for (let i = 0; i < 14; i++) {
+                spawnEnemySquad();
+            }
+        }
+
+        function spawnCrate() {
+            for (let attempt = 0; attempt < 15; attempt++) {
+                const x = 250 + Math.random() * (WORLD_SIZE - 400);
+                const y = 250 + Math.random() * (WORLD_SIZE - 400);
+                if (Math.hypot(x - BASE_POS.x, y - BASE_POS.y) < 300) continue;
+                if (!checkWallCollision(x, y, 22)) {
+                    game.crates.push({
+                        x, y,
+                        opened: false,
+                        lootType: ['ammo', 'medkit', 'money', 'valuable'][Math.floor(Math.random() * 4)]
+                    });
+                    break;
+                }
+            }
+        }
+
+        function spawnEnemySquad() {
+            const x = 500 + Math.random() * (WORLD_SIZE - 650);
+            const y = 500 + Math.random() * (WORLD_SIZE - 650);
+            if (Math.hypot(x - BASE_POS.x, y - BASE_POS.y) < 650) return;
+
+            const count = 1 + Math.floor(Math.random() * 2);
+            for (let i = 0; i < count; i++) {
+                const isSniper = Math.random() < 0.25;
+                game.enemies.push({
+                    x: x + (Math.random() - 0.5) * 60,
+                    y: y + (Math.random() - 0.5) * 60,
+                    hp: isSniper ? 55 : 75,
+                    maxHp: isSniper ? 55 : 75,
+                    speed: isSniper ? 75 : 105,
+                    angle: Math.random() * Math.PI * 2,
+                    fireCooldown: 1 + Math.random() * 1.5,
+                    type: isSniper ? 'sniper' : 'rifleman',
+                    patrolOrigin: { x, y },
+                    alertTimer: 0
+                });
+            }
+        }
+
+        function spawnFpvDrone() {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 850 + Math.random() * 350;
+            const x = Math.max(100, Math.min(WORLD_SIZE - 100, game.player.x + Math.cos(angle) * dist));
+            const y = Math.max(100, Math.min(WORLD_SIZE - 100, game.player.y + Math.sin(angle) * dist));
+
+            // Не атакуем прямо внутри базы
+            if (Math.hypot(x - BASE_POS.x, y - BASE_POS.y) < BASE_POS.radius + 100) return;
+
+            game.fpvDrones.push({
+                x, y,
+                hp: 25,
+                speed: 235,
+                angle: 0,
+                rotorAngle: 0
+            });
+
+            if (game.player.hasDetector) {
+                showRadioAlert('📡 ДЕТЕКТОР «БУЛАТ»: ВНИМАНИЕ! ВРАЖЕСКИЙ FPV-ДРОН В СЕКТОРЕ!', 3500);
+                sound.playRadioBeep();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 5. СИСТЕМА ДИНАМИЧЕСКИХ КОНТРАКТОВ (КВЕСТОВ)
+         * ============================================================================
+         */
+        function generateNewQuest() {
+            const types = ['delivery', 'clear', 'recon'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            const mult = CLASSES[game.player.classId].questMult;
+
+            // Выбираем удаленную точку на карте
+            let tx = 600 + Math.random() * (WORLD_SIZE - 800);
+            let ty = 600 + Math.random() * (WORLD_SIZE - 800);
+            while (Math.hypot(tx - game.player.x, ty - game.player.y) < 850) {
+                tx = 600 + Math.random() * (WORLD_SIZE - 800);
+                ty = 600 + Math.random() * (WORLD_SIZE - 800);
+            }
+
+            if (type === 'delivery') {
+                game.quest = {
+                    type: 'delivery',
+                    title: 'Доставка БК на передовую',
+                    desc: 'Доставьте ящик с боеприпасами на опорную точку союзников.',
+                    targetX: tx,
+                    targetY: ty,
+                    radius: 65,
+                    progress: 0,
+                    maxProgress: 1,
+                    reward: Math.round(750 * mult)
+                };
+            } else if (type === 'clear') {
+                // Спавним целевой отряд в точке квеста
+                const targetEnemies = [];
+                for (let i = 0; i < 3; i++) {
+                    const enemy = {
+                        x: tx + (Math.random() - 0.5) * 90,
+                        y: ty + (Math.random() - 0.5) * 90,
+                        hp: 85,
+                        maxHp: 85,
+                        speed: 110,
+                        angle: 0,
+                        fireCooldown: 1,
+                        type: 'commander',
+                        patrolOrigin: { x: tx, y: ty },
+                        alertTimer: 0,
+                        isQuestTarget: true
+                    };
+                    game.enemies.push(enemy);
+                    targetEnemies.push(enemy);
+                }
+
+                game.quest = {
+                    type: 'clear',
+                    title: 'Зачистка укрепрайона',
+                    desc: 'Ликвидируйте вражеский расчет в указанном квадрате.',
+                    targetX: tx,
+                    targetY: ty,
+                    radius: 150,
+                    progress: 0,
+                    maxProgress: 3,
+                    reward: Math.round(950 * mult)
+                };
+            } else {
+                game.quest = {
+                    type: 'recon',
+                    title: 'Тактическая разведка',
+                    desc: 'Проведите наблюдение в указанной точке (удерживайте позицию 4 сек).',
+                    targetX: tx,
+                    targetY: ty,
+                    radius: 75,
+                    progress: 0,
+                    maxProgress: 4,
+                    reward: Math.round(800 * mult)
+                };
+            }
+
+            sound.playRadioBeep();
+            showRadioAlert(`📻 НОВЫЙ КОНТРАКТ: ${game.quest.title} (+${game.quest.reward} ₽)`, 3500);
+            updateQuestHUD();
+        }
+
+        function completeQuest() {
+            const reward = game.quest.reward;
+            game.player.money += reward;
+            game.totalEarned += reward;
+            game.questsCompleted++;
+            sound.playRadioBeep();
+            sound.playLootPickup();
+            addFloatingText(game.player.x, game.player.y - 30, `+${reward} ₽ КОНТРАКТ ВЫПОЛНЕН!`, '#fbbf24');
+            showRadioAlert(`✅ КОНТРАКТ ВЫПОЛНЕН! НАЧИСЛЕНО ${reward} ₽`, 3000);
+            generateNewQuest();
+        }
+
+        /**
+         * ============================================================================
+         * 6. СТАРТ ИГРЫ И УПРАВЛЕНИЕ ИГРОКОМ
+         * ============================================================================
+         */
+        function startGame() {
+            sound.init();
+            sound.playRadioBeep();
+
+            const cls = CLASSES[setupState.selectedClass];
+            const vitLvl = setupState.skills.vitality;
+            const agiLvl = setupState.skills.agility;
+            const awaLvl = setupState.skills.awareness;
+
+            const maxHp = cls.hp + vitLvl * 30;
+
+            game.player = {
+                x: BASE_POS.x,
+                y: BASE_POS.y,
+                radius: 16,
+                angle: 0,
+                classId: cls.id,
+                className: cls.name,
+                hp: maxHp,
+                maxHp: maxHp,
+                armor: cls.armor,
+                maxArmor: 100,
+                stamina: 100,
+                maxStamina: 100,
+                speed: 195 * cls.speedMult * (1 + agiLvl * 0.15),
+                damageMult: cls.damageMult,
+                skills: { ...setupState.skills },
+                viewRadius: 430 + awaLvl * 140,
+                money: setupState.money,
+                magSize: cls.magSize,
+                magAmmo: cls.magSize,
+                reserveAmmo: cls.reserveAmmo + setupState.purchases.ammo * 90,
+                reloading: false,
+                reloadTimer: 0,
+                fireCooldown: 0,
+                dashTimer: 0,
+                dashCooldown: 0,
+                invulnTimer: 0,
+                medkits: cls.medkits + setupState.purchases.medkit,
+                plates: cls.plates + setupState.purchases.plate,
+                grenades: cls.grenades + setupState.purchases.grenade,
+                hasDetector: setupState.purchases.detector
+            };
+
+            game.time = 0;
+            game.kills = 0;
+            game.questsCompleted = 0;
+            game.totalEarned = setupState.money;
+            game.playerDrone = null;
+            game.running = true;
+            game.paused = false;
+
+            generateWorld();
+            generateNewQuest();
+
+            document.getElementById('setupScreen').classList.add('hidden');
+            document.getElementById('gameOverModal').classList.add('hidden');
+            document.getElementById('hudTop').classList.remove('hidden');
+            document.getElementById('hudBottom').classList.remove('hidden');
+
+            if (game.player.hasDetector) {
+                document.getElementById('hudDetectorStatus').classList.remove('hidden');
+            } else {
+                document.getElementById('hudDetectorStatus').classList.add('hidden');
+            }
+
+            document.getElementById('slotDroneLabel').textContent =
+                game.player.classId === 'drone' ? 'FPV-ДРОН' : 'РЭБ-ИМПУЛЬС';
+
+            updateHUD();
+        }
+
+        function resetToSetup() {
+            setupState = {
+                selectedClass: 'assault',
+                money: 1500,
+                skillPoints: 2,
+                skills: { awareness: 0, vitality: 0, agility: 0 },
+                purchases: { medkit: 0, plate: 0, ammo: 0, grenade: 0, detector: false }
+            };
+            document.getElementById('gameOverModal').classList.add('hidden');
+            document.getElementById('hudTop').classList.add('hidden');
+            document.getElementById('hudBottom').classList.add('hidden');
+            document.getElementById('setupScreen').classList.remove('hidden');
+            selectClass('assault');
+            updateSetupUI();
+        }
+
+        // Использование быстрых слотов 1-4
+        function useSlot(slot) {
+            if (!game.running || game.paused) return;
+            const p = game.player;
+
+            if (slot === 1) {
+                // Аптечка
+                if (p.medkits > 0 && p.hp < p.maxHp) {
+                    p.medkits--;
+                    const heal = 50 + p.skills.vitality * 15;
+                    p.hp = Math.min(p.maxHp, p.hp + heal);
+                    sound.playLootPickup();
+                    addFloatingText(p.x, p.y - 20, `+${heal} HP`, '#4ade80');
+                }
+            } else if (slot === 2) {
+                // Бронепластина
+                if (p.plates > 0 && p.armor < p.maxArmor) {
+                    p.plates--;
+                    p.armor = Math.min(p.maxArmor, p.armor + 50);
+                    sound.playLootPickup();
+                    addFloatingText(p.x, p.y - 20, '+50 БРОНЯ', '#38bdf8');
+                }
+            } else if (slot === 3) {
+                // Граната Ф-1
+                if (p.grenades > 0) {
+                    p.grenades--;
+                    const targetX = p.x + Math.cos(p.angle) * 280;
+                    const targetY = p.y + Math.sin(p.angle) * 280;
+                    game.grenades.push({
+                        x: p.x,
+                        y: p.y,
+                        vx: Math.cos(p.angle) * 420,
+                        vy: Math.sin(p.angle) * 420,
+                        timer: 1.35
+                    });
+                    addFloatingText(p.x, p.y - 20, 'БРОСОК ГРАНАТЫ!', '#fb923c');
+                }
+            } else if (slot === 4) {
+                // Спецспособность: Оператор БПЛА запускает/взрывает дрон; остальные активируют карманный РЭБ
+                if (p.classId === 'drone') {
+                    if (game.playerDrone) {
+                        // Подрыв управляемого FPV-дрона
+                        triggerExplosion(game.playerDrone.x, game.playerDrone.y, 145, 160, true);
+                        game.playerDrone = null;
+                        game.timers.droneCooldown = 8;
+                    } else if (game.timers.droneCooldown <= 0) {
+                        game.playerDrone = {
+                            x: p.x + Math.cos(p.angle) * 30,
+                            y: p.y + Math.sin(p.angle) * 30,
+                            angle: p.angle,
+                            speed: 340,
+                            life: 14
+                        };
+                        sound.playRadioBeep();
+                        showRadioAlert('🛸 FPV-ДРОН В ВОЗДУХЕ! УПРАВЛЕНИЕ: WASD, ПОДРЫВ: [4] ИЛИ ЛКМ', 3500);
+                    }
+                } else {
+                    // Купол РЭБ (подавляет ближайшие вражеские дроны)
+                    if (game.timers.droneCooldown <= 0) {
+                        game.timers.droneCooldown = 14;
+                        sound.playRadioBeep();
+                        addFloatingText(p.x, p.y - 25, '📡 ИМПУЛЬС РЭБ АКТИВИРОВАН!', '#c084fc');
+                        createExplosionParticles(p.x, p.y, '#a855f7', 25);
+                        game.fpvDrones.forEach(d => {
+                            if (Math.hypot(d.x - p.x, d.y - p.y) < 380) {
+                                d.hp = 0;
+                                triggerExplosion(d.x, d.y, 60, 40, true);
+                            }
+                        });
+                    }
+                }
+            }
+            updateHUD();
+        }
+
+        function triggerDash() {
+            const p = game.player;
+            if (p.dashCooldown <= 0 && p.stamina >= 30 && !game.playerDrone) {
+                p.stamina -= 30;
+                p.dashTimer = 0.22;
+                p.invulnTimer = 0.32;
+                p.dashCooldown = Math.max(0.6, 1.1 - p.skills.agility * 0.2);
+                sound.playStep();
+                createExplosionParticles(p.x, p.y, '#94a3b8', 8);
+            }
+        }
+
+        function startReload() {
+            const p = game.player;
+            if (p.reloading || p.magAmmo === p.magSize || p.reserveAmmo <= 0) return;
+            p.reloading = true;
+            p.reloadTimer = 1.4;
+            sound.playLootPickup();
+        }
+
+        function interactNearby() {
+            const p = game.player;
+            // Проверка базы
+            if (Math.hypot(p.x - BASE_POS.x, p.y - BASE_POS.y) <= BASE_POS.radius) {
+                openBaseModal();
+                return;
+            }
+            // Обыск ящиков с лутом
+            for (let crate of game.crates) {
+                if (!crate.opened && Math.hypot(p.x - crate.x, p.y - crate.y) < 60) {
+                    crate.opened = true;
+                    sound.playLootPickup();
+                    if (crate.lootType === 'ammo') {
+                        p.reserveAmmo += 60;
+                        addFloatingText(crate.x, crate.y - 15, '+60 ПАТРОНОВ', '#fbbf24');
+                    } else if (crate.lootType === 'medkit') {
+                        p.medkits++;
+                        addFloatingText(crate.x, crate.y - 15, '+1 АПТЕЧКА', '#4ade80');
+                    } else if (crate.lootType === 'money') {
+                        const cash = 250 + Math.floor(Math.random() * 250);
+                        p.money += cash;
+                        game.totalEarned += cash;
+                        addFloatingText(crate.x, crate.y - 15, `+${cash} ₽`, '#fbbf24');
+                    } else {
+                        p.plates++;
+                        p.grenades++;
+                        addFloatingText(crate.x, crate.y - 15, '+ПЛАСТИНА И ГРАНАТА', '#38bdf8');
+                    }
+                    updateHUD();
+                    break;
+                }
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 7. МОДАЛЬНОЕ ОКНО БАЗЫ / ПОЛЕВОГО МАГАЗИНА
+         * ============================================================================
+         */
+        function openBaseModal() {
+            if (!game.running) return;
+            game.paused = true;
+            sound.updateDroneProximity(9999, false);
+            renderBaseModal();
+            document.getElementById('baseModal').classList.remove('hidden');
+        }
+
+        function closeBaseModal() {
+            document.getElementById('baseModal').classList.add('hidden');
+            game.paused = false;
+        }
+
+        function renderBaseModal() {
+            const p = game.player;
+            const discount = CLASSES[p.classId].shopDiscount;
+            document.getElementById('baseMoney').textContent = `${p.money} ₽`;
+
+            const shopDiv = document.getElementById('baseShopList');
+            shopDiv.innerHTML = '';
+            SHOP_ITEMS.forEach(item => {
+                const price = Math.round(item.price * discount);
+                const owned = item.unique && p.hasDetector;
+                const disabled = owned || p.money < price;
+                const row = document.createElement('div');
+                row.className = 'bg-[#111712] border border-[#2d3b2f] p-2 rounded flex justify-between items-center';
+                row.innerHTML = `
+                    <div>
+                        <div class="text-xs font-bold text-white">${item.name}</div>
+                        <div class="text-[10px] text-gray-400">${item.desc}</div>
+                    </div>
+                    <button onclick="buyBaseItem('${item.id}')" ${disabled ? 'disabled' : ''} class="tactical-btn px-2.5 py-1 rounded text-xs font-bold text-amber-300">
+                        ${owned ? 'ЕСТЬ' : price + ' ₽'}
+                    </button>
+                `;
+                shopDiv.appendChild(row);
+            });
+
+            const skillDiv = document.getElementById('baseSkillList');
+            skillDiv.innerHTML = '';
+            const skillMeta = [
+                { id: 'awareness', name: '👁️ Внимательность', cost: 600 },
+                { id: 'vitality', name: '❤️ Живучесть', cost: 600 },
+                { id: 'agility', name: '⚡ Спринтер', cost: 600 }
+            ];
+            skillMeta.forEach(sk => {
+                const lvl = p.skills[sk.id];
+                const disabled = lvl >= 2 || p.money < sk.cost;
+                const row = document.createElement('div');
+                row.className = 'bg-[#111712] border border-[#2d3b2f] p-2 rounded flex justify-between items-center';
+                row.innerHTML = `
+                    <div>
+                        <div class="text-xs font-bold text-white">${sk.name}</div>
+                        <div class="text-[10px] text-emerald-400">Уровень: ${lvl} / 2</div>
+                    </div>
+                    <button onclick="buyBaseSkill('${sk.id}', ${sk.cost})" ${disabled ? 'disabled' : ''} class="tactical-btn px-2.5 py-1 rounded text-xs font-bold text-emerald-300">
+                        ${lvl >= 2 ? 'МАКС' : sk.cost + ' ₽'}
+                    </button>
+                `;
+                skillDiv.appendChild(row);
+            });
+        }
+
+        function buyBaseItem(itemId) {
+            const p = game.player;
+            const item = SHOP_ITEMS.find(i => i.id === itemId);
+            const price = Math.round(item.price * CLASSES[p.classId].shopDiscount);
+            if (p.money < price) return;
+
+            p.money -= price;
+            sound.playLootPickup();
+            if (itemId === 'medkit') p.medkits++;
+            if (itemId === 'plate') p.plates++;
+            if (itemId === 'ammo') p.reserveAmmo += 90;
+            if (itemId === 'grenade') p.grenades++;
+            if (itemId === 'detector') {
+                p.hasDetector = true;
+                document.getElementById('hudDetectorStatus').classList.remove('hidden');
+            }
+            renderBaseModal();
+            updateHUD();
+        }
+
+        function buyBaseSkill(skillId, cost) {
+            const p = game.player;
+            if (p.skills[skillId] >= 2 || p.money < cost) return;
+            p.money -= cost;
+            p.skills[skillId]++;
+            sound.playLootPickup();
+
+            if (skillId === 'vitality') {
+                p.maxHp += 30;
+                p.hp += 30;
+            } else if (skillId === 'agility') {
+                p.speed *= 1.15;
+            } else if (skillId === 'awareness') {
+                p.viewRadius += 140;
+            }
+            renderBaseModal();
+            updateHUD();
+        }
+
+        /**
+         * ============================================================================
+         * 8. ФИЗИКА, СТОЛКНОВЕНИЯ, ВЗРЫВЫ И БОЕВАЯ ЛОГИКА
+         * ============================================================================
+         */
+        function checkWallCollision(x, y, radius) {
+            if (x < radius || y < radius || x > WORLD_SIZE - radius || y > WORLD_SIZE - radius) {
+                return true;
+            }
+            for (let obs of game.obstacles) {
+                if (obs.type === 'forest') continue; // Через лесополосу можно проходить (замедляет/маскирует)
+                const closestX = Math.max(obs.x, Math.min(x, obs.x + obs.w));
+                const closestY = Math.max(obs.y, Math.min(y, obs.y + obs.h));
+                const dist = Math.hypot(x - closestX, y - closestY);
+                if (dist < radius) return true;
+            }
+            return false;
+        }
+
+        function isInForest(x, y) {
+            for (let obs of game.obstacles) {
+                if (obs.type === 'forest' && x >= obs.x && x <= obs.x + obs.w && y >= obs.y && y <= obs.y + obs.h) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function fireBullet(x, y, angle, isPlayer, damage, speed = 820) {
+            sound.playShot(isPlayer);
+            game.bullets.push({
+                x: x + Math.cos(angle) * 20,
+                y: y + Math.sin(angle) * 20,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                isPlayer,
+                damage,
+                life: 1.1
+            });
+        }
+
+        function triggerExplosion(x, y, radius, maxDamage, friendlyFireSafe = false) {
+            sound.playExplosion(0.5);
+            game.camera.shake = Math.min(18, game.camera.shake + 12);
+            createExplosionParticles(x, y, '#f97316', 32);
+            createExplosionParticles(x, y, '#52525b', 20);
+
+            // Урон врагам
+            game.enemies.forEach(e => {
+                const dist = Math.hypot(e.x - x, e.y - y);
+                if (dist < radius) {
+                    const dmg = Math.round(maxDamage * (1 - dist / radius));
+                    e.hp -= dmg;
+                    addFloatingText(e.x, e.y - 15, `-${dmg}`, '#fb923c');
+                }
+            });
+
+            // Урон вражеским FPV-дронам
+            game.fpvDrones.forEach(d => {
+                if (Math.hypot(d.x - x, d.y - y) < radius) {
+                    d.hp = 0;
+                }
+            });
+
+            // Урон игроку (если не безопасный взрыв игрока и вне базы)
+            if (!friendlyFireSafe) {
+                const p = game.player;
+                const distP = Math.hypot(p.x - x, p.y - y);
+                if (distP < radius && Math.hypot(p.x - BASE_POS.x, p.y - BASE_POS.y) > BASE_POS.radius) {
+                    const dmg = Math.round(maxDamage * (1 - distP / radius));
+                    damagePlayer(dmg, 'Взрывная волна и осколки');
+                }
+            }
+        }
+
+        function damagePlayer(amount, reason) {
+            const p = game.player;
+            if (p.invulnTimer > 0 || !game.running) return;
+            // На базе игрок неуязвим
+            if (Math.hypot(p.x - BASE_POS.x, p.y - BASE_POS.y) <= BASE_POS.radius) return;
+
+            let remaining = amount;
+            if (p.armor > 0) {
+                const absorbed = Math.min(p.armor, remaining * 0.7);
+                p.armor -= absorbed;
+                remaining -= absorbed;
+            }
+            p.hp -= Math.round(remaining);
+            game.camera.shake = Math.min(14, game.camera.shake + 6);
+            addFloatingText(p.x, p.y - 20, `-${Math.round(amount)}`, '#ef4444');
+
+            if (p.hp <= 0) {
+                p.hp = 0;
+                endGame(reason);
+            }
+        }
+
+        function endGame(reason) {
+            game.running = false;
+            sound.updateDroneProximity(9999, false);
+            document.getElementById('deathReason').textContent = `Причина гибели: ${reason}`;
+            document.getElementById('endTime').textContent = formatTime(game.time);
+            document.getElementById('endKills').textContent = game.kills;
+            document.getElementById('endQuests').textContent = game.questsCompleted;
+            document.getElementById('endEarned').textContent = `${game.totalEarned} ₽`;
+            document.getElementById('gameOverModal').classList.remove('hidden');
+        }
+
+        /**
+         * ============================================================================
+         * 9. ГЛАВНЫЙ ИГРОВОЙ ЦИКЛ (UPDATE)
+         * ============================================================================
+         */
+        function update(dt) {
+            if (!game.running || game.paused) return;
+            game.time += dt;
+            const p = game.player;
+
+            // Восстановление выносливости и перезарядка способностей
+            p.stamina = Math.min(p.maxStamina, p.stamina + (16 + p.skills.agility * 5) * dt);
+            if (p.dashTimer > 0) p.dashTimer -= dt;
+            if (p.dashCooldown > 0) p.dashCooldown -= dt;
+            if (p.invulnTimer > 0) p.invulnTimer -= dt;
+            if (p.fireCooldown > 0) p.fireCooldown -= dt;
+            if (game.timers.droneCooldown > 0) game.timers.droneCooldown -= dt;
+
+            // Перезарядка оружия
+            if (p.reloading) {
+                p.reloadTimer -= dt;
+                if (p.reloadTimer <= 0) {
+                    const needed = p.magSize - p.magAmmo;
+                    const take = Math.min(needed, p.reserveAmmo);
+                    p.magAmmo += take;
+                    p.reserveAmmo -= take;
+                    p.reloading = false;
+                }
+            }
+
+            // Вектор движения от WASD
+            let moveX = 0;
+            let moveY = 0;
+            if (game.keys['KeyW'] || game.keys['ArrowUp']) moveY -= 1;
+            if (game.keys['KeyS'] || game.keys['ArrowDown']) moveY += 1;
+            if (game.keys['KeyA'] || game.keys['ArrowLeft']) moveX -= 1;
+            if (game.keys['KeyD'] || game.keys['ArrowRight']) moveX += 1;
+            if (moveX !== 0 && moveY !== 0) {
+                const len = Math.hypot(moveX, moveY);
+                moveX /= len;
+                moveY /= len;
+            }
+
+            // Если активен разведывательно-ударный дрон игрока
+            if (game.playerDrone) {
+                const d = game.playerDrone;
+                d.life -= dt;
+                if (moveX !== 0 || moveY !== 0) {
+                    d.x += moveX * d.speed * dt;
+                    d.y += moveY * d.speed * dt;
+                    d.angle = Math.atan2(moveY, moveX);
+                } else {
+                    d.angle = Math.atan2(game.mouse.worldY - d.y, game.mouse.worldX - d.x);
+                    d.x += Math.cos(d.angle) * (d.speed * 0.55) * dt;
+                    d.y += Math.sin(d.angle) * (d.speed * 0.55) * dt;
+                }
+
+                // Подрыв дрона по времени или ЛКМ
+                if (d.life <= 0 || game.mouse.down) {
+                    game.mouse.down = false;
+                    triggerExplosion(d.x, d.y, 145, 160, true);
+                    game.playerDrone = null;
+                    game.timers.droneCooldown = 8;
+                }
+            } else {
+                // Движение самого бойца
+                const inForest = isInForest(p.x, p.y);
+                const currentSpeed = p.dashTimer > 0 ? p.speed * 2.5 : p.speed * (inForest ? 0.78 : 1.0);
+
+                const nextX = p.x + moveX * currentSpeed * dt;
+                const nextY = p.y + moveY * currentSpeed * dt;
+
+                if (!checkWallCollision(nextX, p.y, p.radius)) p.x = nextX;
+                if (!checkWallCollision(p.x, nextY, p.radius)) p.y = nextY;
+
+                // Звук шагов
+                if (moveX !== 0 || moveY !== 0) {
+                    game.timers.stepSound -= dt;
+                    if (game.timers.stepSound <= 0) {
+                        sound.playStep();
+                        game.timers.stepSound = p.dashTimer > 0 ? 0.16 : 0.34;
+                    }
+                }
+
+                // Поворот бойца к курсору мыши
+                p.angle = Math.atan2(game.mouse.worldY - p.y, game.mouse.worldX - p.x);
+
+                // Стрельба (ЛКМ)
+                if (game.mouse.down && p.fireCooldown <= 0 && !p.reloading) {
+                    if (p.magAmmo > 0) {
+                        p.magAmmo--;
+                        p.fireCooldown = 0.13;
+                        const spread = (Math.random() - 0.5) * 0.06;
+                        fireBullet(p.x, p.y, p.angle + spread, true, 26 * p.damageMult);
+                        if (p.magAmmo === 0 && p.reserveAmmo > 0) startReload();
+                    } else {
+                        startReload();
+                    }
+                }
+            }
+
+            // Проверка нахождения на базе
+            const onBase = Math.hypot(p.x - BASE_POS.x, p.y - BASE_POS.y) <= BASE_POS.radius;
+            const btnBase = document.getElementById('btnOpenBase');
+            if (onBase) {
+                btnBase.classList.remove('hidden');
+                // Медленная регенерация на базе
+                p.hp = Math.min(p.maxHp, p.hp + 4 * dt);
+            } else {
+                btnBase.classList.add('hidden');
+            }
+
+            // Обновление камеры
+            const camTarget = game.playerDrone || p;
+            game.camera.x += (camTarget.x - canvas.width / 2 - game.camera.x) * 0.14;
+            game.camera.y += (camTarget.y - canvas.height / 2 - game.camera.y) * 0.14;
+            if (game.camera.shake > 0) game.camera.shake = Math.max(0, game.camera.shake - 35 * dt);
+
+            // Обновление пуль
+            for (let i = game.bullets.length - 1; i >= 0; i--) {
+                const b = game.bullets[i];
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.life -= dt;
+
+                if (b.life <= 0 || checkWallCollision(b.x, b.y, 3)) {
+                    game.bullets.splice(i, 1);
+                    continue;
+                }
+
+                if (b.isPlayer) {
+                    // Попадание по пехоте
+                    let hit = false;
+                    for (let e of game.enemies) {
+                        if (Math.hypot(b.x - e.x, b.y - e.y) < 18) {
+                            e.hp -= b.damage;
+                            e.alertTimer = 5;
+                            createExplosionParticles(b.x, b.y, '#ef4444', 5);
+                            hit = true;
+                            break;
+                        }
+                    }
+                    // Попадание по вражеским FPV-дронам (можно сбить!)
+                    if (!hit) {
+                        for (let d of game.fpvDrones) {
+                            if (Math.hypot(b.x - d.x, b.y - d.y) < 20) {
+                                d.hp -= b.damage;
+                                createExplosionParticles(b.x, b.y, '#facc15', 8);
+                                hit = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hit) game.bullets.splice(i, 1);
+                } else {
+                    // Вражеская пуля попала в игрока
+                    if (Math.hypot(b.x - p.x, b.y - p.y) < p.radius) {
+                        damagePlayer(b.damage, 'Огнестрельное ранение от патруля противника');
+                        game.bullets.splice(i, 1);
+                    }
+                }
+            }
+
+            // Обновление гранат
+            for (let i = game.grenades.length - 1; i >= 0; i--) {
+                const g = game.grenades[i];
+                g.x += g.vx * dt;
+                g.y += g.vy * dt;
+                g.vx *= 0.94;
+                g.vy *= 0.94;
+                g.timer -= dt;
+                if (g.timer <= 0) {
+                    triggerExplosion(g.x, g.y, 130, 140, true);
+                    game.grenades.splice(i, 1);
+                }
+            }
+
+            // Обновление мин / растяжек
+            for (let mine of game.mines) {
+                if (!mine.triggered && Math.hypot(p.x - mine.x, p.y - mine.y) < mine.radius + p.radius * 0.7) {
+                    mine.triggered = true;
+                    triggerExplosion(mine.x, mine.y, 105, 95, false);
+                }
+            }
+
+            // Обновление вражеской пехоты
+            for (let i = game.enemies.length - 1; i >= 0; i--) {
+                const e = game.enemies[i];
+                if (e.hp <= 0) {
+                    game.kills++;
+                    const bounty = e.type === 'commander' ? 180 : 100;
+                    p.money += bounty;
+                    game.totalEarned += bounty;
+                    addFloatingText(e.x, e.y - 15, `+${bounty} ₽`, '#fbbf24');
+                    createExplosionParticles(e.x, e.y, '#991b1b', 14);
+                    if (e.isQuestTarget && game.quest && game.quest.type === 'clear') {
+                        game.quest.progress++;
+                    }
+                    game.enemies.splice(i, 1);
+                    continue;
+                }
+
+                const distToPlayer = Math.hypot(p.x - e.x, p.y - e.y);
+                const playerStealth = isInForest(p.x, p.y) ? 0.55 : 1.0;
+                const detectRange = (e.type === 'sniper' ? 560 : 420) * playerStealth;
+
+                if ((distToPlayer < detectRange || e.alertTimer > 0) && !onBase) {
+                    if (e.alertTimer > 0) e.alertTimer -= dt;
+                    e.angle = Math.atan2(p.y - e.y, p.x - e.x);
+
+                    const preferredDist = e.type === 'sniper' ? 360 : 210;
+                    if (distToPlayer > preferredDist) {
+                        const nx = e.x + Math.cos(e.angle) * e.speed * dt;
+                        const ny = e.y + Math.sin(e.angle) * e.speed * dt;
+                        if (!checkWallCollision(nx, e.y, 15)) e.x = nx;
+                        if (!checkWallCollision(e.x, ny, 15)) e.y = ny;
+                    }
+
+                    e.fireCooldown -= dt;
+                    if (e.fireCooldown <= 0) {
+                        e.fireCooldown = e.type === 'sniper' ? 2.1 : 1.15;
+                        const dmg = e.type === 'sniper' ? 28 : 14;
+                        fireBullet(e.x, e.y, e.angle + (Math.random() - 0.5) * 0.14, false, dmg, 660);
+                    }
+                }
+            }
+
+            // Обновление вражеских FPV-дронов
+            let minFpvDist = 9999;
+            for (let i = game.fpvDrones.length - 1; i >= 0; i--) {
+                const d = game.fpvDrones[i];
+                if (d.hp <= 0) {
+                    game.kills++;
+                    p.money += 150;
+                    game.totalEarned += 150;
+                    addFloatingText(d.x, d.y - 15, 'FPV СБИТ! +150 ₽', '#4ade80');
+                    triggerExplosion(d.x, d.y, 65, 50, true);
+                    game.fpvDrones.splice(i, 1);
+                    continue;
+                }
+
+                d.rotorAngle += 28 * dt;
+                const dist = Math.hypot(p.x - d.x, p.y - d.y);
+                if (dist < minFpvDist) minFpvDist = dist;
+
+                if (onBase) {
+                    // Улетает от базы
+                    d.angle = Math.atan2(d.y - BASE_POS.y, d.x - BASE_POS.x);
+                } else {
+                    d.angle = Math.atan2(p.y - d.y, p.x - d.x);
+                }
+
+                d.x += Math.cos(d.angle) * d.speed * dt;
+                d.y += Math.sin(d.angle) * d.speed * dt;
+
+                // Столкновение дрона с бойцом
+                if (dist < 24 && !onBase) {
+                    triggerExplosion(d.x, d.y, 110, 95, false);
+                    game.fpvDrones.splice(i, 1);
+                }
+            }
+
+            // Звук приближения дрона (усиливается с детектором)
+            const effectiveSoundDist = p.hasDetector ? minFpvDist * 0.72 : minFpvDist;
+            sound.updateDroneProximity(effectiveSoundDist, !!game.playerDrone);
+
+            // Обновление минометных обстрелов
+            for (let i = game.artilleryZones.length - 1; i >= 0; i--) {
+                const z = game.artilleryZones[i];
+                z.timer -= dt;
+                if (z.timer <= 0) {
+                    triggerExplosion(z.x, z.y, z.radius, 115, false);
+                    game.artilleryZones.splice(i, 1);
+                }
+            }
+
+            // Таймеры спавна угроз
+            game.timers.enemySpawn -= dt;
+            if (game.timers.enemySpawn <= 0) {
+                game.timers.enemySpawn = 16;
+                if (game.enemies.length < 22) spawnEnemySquad();
+            }
+
+            game.timers.droneSpawn -= dt;
+            if (game.timers.droneSpawn <= 0) {
+                game.timers.droneSpawn = Math.max(9, 19 - game.questsCompleted * 1.5);
+                if (!onBase && game.fpvDrones.length < 3) spawnFpvDrone();
+            }
+
+            game.timers.artillerySpawn -= dt;
+            if (game.timers.artillerySpawn <= 0) {
+                game.timers.artillerySpawn = 22;
+                if (!onBase) {
+                    const ax = p.x + (Math.random() - 0.5) * 320;
+                    const ay = p.y + (Math.random() - 0.5) * 320;
+                    if (Math.hypot(ax - BASE_POS.x, ay - BASE_POS.y) > BASE_POS.radius + 120) {
+                        game.artilleryZones.push({
+                            x: ax, y: ay,
+                            radius: 115,
+                            timer: 2.8,
+                            maxTimer: 2.8
+                        });
+                        showRadioAlert('⚠️ ВНИМАНИЕ! МИНОМЕТНЫЙ ОБСТРЕЛ ПОЗИЦИЙ! ПОКИНЬТЕ КРАСНУЮ ЗОНУ!', 2600);
+                        sound.playRadioBeep();
+                    }
+                }
+            }
+
+            // Проверка прогресса текущего квеста
+            if (game.quest) {
+                const q = game.quest;
+                const distToQuest = Math.hypot(p.x - q.targetX, p.y - q.targetY);
+                if (q.type === 'delivery' && distToQuest <= q.radius) {
+                    q.progress = 1;
+                    completeQuest();
+                } else if (q.type === 'recon' && distToQuest <= q.radius) {
+                    q.progress = Math.min(q.maxProgress, q.progress + dt);
+                    if (q.progress >= q.maxProgress) completeQuest();
+                } else if (q.type === 'clear' && q.progress >= q.maxProgress) {
+                    completeQuest();
+                }
+            }
+
+            // Обновление частиц и всплывающего текста
+            for (let i = game.particles.length - 1; i >= 0; i--) {
+                const pt = game.particles[i];
+                pt.x += pt.vx * dt;
+                pt.y += pt.vy * dt;
+                pt.life -= dt;
+                if (pt.life <= 0) game.particles.splice(i, 1);
+            }
+            for (let i = game.floatingTexts.length - 1; i >= 0; i--) {
+                const ft = game.floatingTexts[i];
+                ft.y -= 28 * dt;
+                ft.life -= dt;
+                if (ft.life <= 0) game.floatingTexts.splice(i, 1);
+            }
+
+            updateHUD();
+        }
+
+        /**
+         * ============================================================================
+         * 10. ОТРИСОВКА КАРТЫ, ОБЪЕКТОВ, ТУМАНА ВОЙНЫ И МИНИ-КАРТЫ
+         * ============================================================================
+         */
+        function render() {
+            ctx.fillStyle = '#141a13';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (!game.player) return;
+
+            ctx.save();
+            const shakeX = (Math.random() - 0.5) * game.camera.shake;
+            const shakeY = (Math.random() - 0.5) * game.camera.shake;
+            ctx.translate(-game.camera.x + shakeX, -game.camera.y + shakeY);
+
+            // 1. Тактическая сетка местности (земля, воронки, трава)
+            ctx.strokeStyle = '#1d261c';
+            ctx.lineWidth = 1;
+            const gridSize = 100;
+            const startX = Math.floor(game.camera.x / gridSize) * gridSize;
+            const startY = Math.floor(game.camera.y / gridSize) * gridSize;
+            for (let x = startX; x < game.camera.x + canvas.width + gridSize; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, game.camera.y);
+                ctx.lineTo(x, game.camera.y + canvas.height);
+                ctx.stroke();
+            }
+            for (let y = startY; y < game.camera.y + canvas.height + gridSize; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(game.camera.x, y);
+                ctx.lineTo(game.camera.x + canvas.width, y);
+                ctx.stroke();
+            }
+
+            // Границы сектора
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, WORLD_SIZE, WORLD_SIZE);
+
+            // 2. Опорный пункт (База)
+            ctx.beginPath();
+            ctx.arc(BASE_POS.x, BASE_POS.y, BASE_POS.radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.12)';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 6]);
+            ctx.strokeStyle = '#4ade80';
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = '#4ade80';
+            ctx.font = 'bold 13px JetBrains Mono';
+            ctx.textAlign = 'center';
+            ctx.fillText('🏕️ ОПОРНЫЙ ПУНКТ [E - БАЗА]', BASE_POS.x, BASE_POS.y - 10);
+
+            // 3. Зона текущего квеста
+            if (game.quest) {
+                const q = game.quest;
+                ctx.beginPath();
+                ctx.arc(q.targetX, q.targetY, q.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(251, 191, 36, 0.14)';
+                ctx.fill();
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = '#fbbf24';
+                ctx.font = 'bold 12px JetBrains Mono';
+                ctx.fillText(`🎯 ${q.title.toUpperCase()}`, q.targetX, q.targetY - q.radius - 8);
+            }
+
+            // 4. Мины / растяжки (видны лучше с навыком «Внимательность»)
+            const awareness = game.player.skills.awareness;
+            for (let mine of game.mines) {
+                if (mine.triggered) continue;
+                const dist = Math.hypot(game.player.x - mine.x, game.player.y - mine.y);
+                const visibleDist = 110 + awareness * 150;
+                if (dist < visibleDist) {
+                    ctx.beginPath();
+                    ctx.arc(mine.x, mine.y, 7, 0, Math.PI * 2);
+                    ctx.fillStyle = awareness > 0 ? '#ef4444' : 'rgba(239, 68, 68, 0.45)';
+                    ctx.fill();
+                    if (awareness > 0) {
+                        ctx.beginPath();
+                        ctx.arc(mine.x, mine.y, 16, 0, Math.PI * 2);
+                        ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            // 5. Ящики с лутом
+            for (let crate of game.crates) {
+                ctx.fillStyle = crate.opened ? '#3f3f46' : '#d97706';
+                ctx.strokeStyle = crate.opened ? '#52525b' : '#fef08a';
+                ctx.lineWidth = 2;
+                ctx.fillRect(crate.x - 14, crate.y - 14, 28, 28);
+                ctx.strokeRect(crate.x - 14, crate.y - 14, 28, 28);
+
+                if (!crate.opened && (awareness > 0 || Math.hypot(game.player.x - crate.x, game.player.y - crate.y) < 120)) {
+                    ctx.fillStyle = '#fef08a';
+                    ctx.font = 'bold 11px JetBrains Mono';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('📦 ЛУТ [E]', crate.x, crate.y - 20);
+                }
+            }
+
+            // 6. Зоны минометного обстрела
+            for (let z of game.artilleryZones) {
+                const progress = 1 - (z.timer / z.maxTimer);
+                ctx.beginPath();
+                ctx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(239, 68, 68, ${0.15 + progress * 0.25})`;
+                ctx.fill();
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Внутренний сужающийся круг прилета
+                ctx.beginPath();
+                ctx.arc(z.x, z.y, z.radius * (1 - progress), 0, Math.PI * 2);
+                ctx.strokeStyle = '#fca5a5';
+                ctx.stroke();
+            }
+
+            // 7. Разрушенные здания (стены)
+            for (let obs of game.obstacles) {
+                if (obs.type === 'ruin') {
+                    ctx.fillStyle = '#272c28';
+                    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                    ctx.strokeStyle = '#475249';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+                }
+            }
+
+            // 8. Вражеская пехота
+            for (let e of game.enemies) {
+                drawSoldier(e.x, e.y, e.angle, e.type === 'commander' ? '#b91c1c' : '#dc2626', '#fca5a5');
+                // Полоска HP врага
+                ctx.fillStyle = '#000';
+                ctx.fillRect(e.x - 16, e.y - 26, 32, 4);
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(e.x - 16, e.y - 26, 32 * (e.hp / e.maxHp), 4);
+            }
+
+            // 9. Боец игрока
+            const p = game.player;
+            drawSoldier(p.x, p.y, p.angle, '#15803d', '#86efac', p.dashTimer > 0);
+
+            // 10. Лесополосы (рисуем поверх бойцов для эффекта укрытия в кронах)
+            for (let obs of game.obstacles) {
+                if (obs.type === 'forest') {
+                    ctx.fillStyle = 'rgba(22, 54, 29, 0.72)';
+                    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                    ctx.strokeStyle = 'rgba(52, 102, 62, 0.6)';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+                }
+            }
+
+            // 11. Вражеские FPV-дроны и дрон игрока
+            for (let d of game.fpvDrones) {
+                drawDrone(d.x, d.y, d.rotorAngle, '#ef4444');
+            }
+            if (game.playerDrone) {
+                drawDrone(game.playerDrone.x, game.playerDrone.y, game.time * 30, '#38bdf8');
+            }
+
+            // 12. Пули и гранаты
+            for (let b of game.bullets) {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = b.isPlayer ? '#fde047' : '#f87171';
+                ctx.fill();
+            }
+            for (let g of game.grenades) {
+                ctx.beginPath();
+                ctx.arc(g.x, g.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = '#4d7c0f';
+                ctx.fill();
+                ctx.strokeStyle = '#bef264';
+                ctx.stroke();
+            }
+
+            // 13. Частицы и всплывающие цифры
+            for (let pt of game.particles) {
+                ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+                ctx.fillStyle = pt.color;
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            for (let ft of game.floatingTexts) {
+                ctx.globalAlpha = Math.max(0, ft.life / ft.maxLife);
+                ctx.fillStyle = ft.color;
+                ctx.font = 'bold 13px JetBrains Mono';
+                ctx.textAlign = 'center';
+                ctx.fillText(ft.text, ft.x, ft.y);
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+
+            // 14. Туман войны / Ограниченный конус и радиус обзора
+            renderFogOfWar();
+
+            // 15. Мини-карта
+            renderMinimap();
+        }
+
+        function drawSoldier(x, y, angle, bodyColor, trimColor, isDashing = false) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+
+            if (isDashing) {
+                ctx.shadowColor = '#86efac';
+                ctx.shadowBlur = 15;
+            }
+
+            // Тело
+            ctx.beginPath();
+            ctx.arc(0, 0, 15, 0, Math.PI * 2);
+            ctx.fillStyle = bodyColor;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = trimColor;
+            ctx.stroke();
+
+            // Автомат
+            ctx.fillStyle = '#18181b';
+            ctx.fillRect(6, -3, 18, 6);
+
+            ctx.restore();
+        }
+
+        function drawDrone(x, y, rotorAngle, color) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            // Лучи рамы X-образного квадрокоптера
+            ctx.strokeStyle = '#d4d4d8';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(-12, -12);
+            ctx.lineTo(12, 12);
+            ctx.moveTo(12, -12);
+            ctx.lineTo(-12, 12);
+            ctx.stroke();
+
+            // Пропеллеры
+            const offsets = [[-12, -12], [12, -12], [-12, 12], [12, 12]];
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            offsets.forEach(([ox, oy]) => {
+                ctx.beginPath();
+                ctx.arc(ox, oy, 6, rotorAngle, rotorAngle + Math.PI);
+                ctx.stroke();
+            });
+
+            // Корпус и заряд
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(0, 0, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function renderFogOfWar() {
+            const p = game.player;
+            const focus = game.playerDrone || p;
+            const screenX = focus.x - game.camera.x;
+            const screenY = focus.y - game.camera.y;
+            const viewR = game.playerDrone ? 520 : p.viewRadius;
+
+            const grad = ctx.createRadialGradient(screenX, screenY, viewR * 0.55, screenX, screenY, viewR * 1.15);
+            grad.addColorStop(0, 'rgba(10, 14, 11, 0)');
+            grad.addColorStop(1, 'rgba(10, 14, 11, 0.86)');
+
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function renderMinimap() {
+            const w = minimapCanvas.width;
+            const h = minimapCanvas.height;
+            const scale = w / WORLD_SIZE;
+
+            mCtx.fillStyle = '#090d0a';
+            mCtx.fillRect(0, 0, w, h);
+
+            // База
+            mCtx.fillStyle = '#4ade80';
+            mCtx.beginPath();
+            mCtx.arc(BASE_POS.x * scale, BASE_POS.y * scale, 5, 0, Math.PI * 2);
+            mCtx.fill();
+
+            // Маркер квеста
+            if (game.quest) {
+                mCtx.fillStyle = '#fbbf24';
+                mCtx.beginPath();
+                mCtx.arc(game.quest.targetX * scale, game.quest.targetY * scale, 4.5, 0, Math.PI * 2);
+                mCtx.fill();
+            }
+
+            // Враги в радиусе обзора (или все, если прокачана Внимательность 2 ур.)
+            const p = game.player;
+            const radarRange = p.skills.awareness >= 2 ? 1200 : p.viewRadius * 1.3;
+            game.enemies.forEach(e => {
+                if (Math.hypot(e.x - p.x, e.y - p.y) < radarRange) {
+                    mCtx.fillStyle = '#ef4444';
+                    mCtx.fillRect(e.x * scale - 1.5, e.y * scale - 1.5, 3, 3);
+                }
+            });
+
+            // Вражеские FPV-дроны (видны на радаре с детектором)
+            if (p.hasDetector) {
+                game.fpvDrones.forEach(d => {
+                    mCtx.fillStyle = '#f97316';
+                    mCtx.beginPath();
+                    mCtx.arc(d.x * scale, d.y * scale, 3, 0, Math.PI * 2);
+                    mCtx.fill();
+                });
+            }
+
+            // Игрок
+            mCtx.fillStyle = '#ffffff';
+            mCtx.beginPath();
+            mCtx.arc(p.x * scale, p.y * scale, 3, 0, Math.PI * 2);
+            mCtx.fill();
+        }
+
+        /**
+         * ============================================================================
+         * 11. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ HUD И ЭФФЕКТОВ
+         * ============================================================================
+         */
+        function createExplosionParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 40 + Math.random() * 190;
+                const life = 0.3 + Math.random() * 0.45;
+                game.particles.push({
+                    x, y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    color,
+                    size: 2 + Math.random() * 3.5,
+                    life,
+                    maxLife: life
+                });
+            }
+        }
+
+        function addFloatingText(x, y, text, color) {
+            game.floatingTexts.push({ x, y, text, color, life: 1.2, maxLife: 1.2 });
+        }
+
+        let radioTimeout = null;
+        function showRadioAlert(text, duration = 3000) {
+            const el = document.getElementById('radioAlert');
+            el.textContent = text;
+            el.classList.remove('hidden');
+            clearTimeout(radioTimeout);
+            radioTimeout = setTimeout(() => el.classList.add('hidden'), duration);
+        }
+
+        function formatTime(sec) {
+            const m = Math.floor(sec / 60).toString().padStart(2, '0');
+            const s = Math.floor(sec % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function updateQuestHUD() {
+            if (!game.quest) return;
+            const q = game.quest;
+            document.getElementById('hudQuestTitle').textContent = q.title;
+            document.getElementById('hudQuestDesc').textContent = q.desc;
+            document.getElementById('hudQuestReward').textContent = `+${q.reward} ₽`;
+        }
+
+        function updateHUD() {
+            const p = game.player;
+            if (!p) return;
+
+            document.getElementById('hudClassTitle').textContent = p.className;
+            document.getElementById('hudMoney').textContent = `${p.money} ₽`;
+
+            document.getElementById('hudHpText').textContent = `${Math.ceil(p.hp)} / ${p.maxHp}`;
+            document.getElementById('hudHpBar').style.width = `${(p.hp / p.maxHp) * 100}%`;
+
+            document.getElementById('hudArmorText').textContent = `${Math.ceil(p.armor)} / ${p.maxArmor}`;
+            document.getElementById('hudArmorBar').style.width = `${(p.armor / p.maxArmor) * 100}%`;
+
+            document.getElementById('hudStaminaText').textContent = `${Math.round(p.stamina)}%`;
+            document.getElementById('hudStaminaBar').style.width = `${p.stamina}%`;
+
+            document.getElementById('hudKills').textContent = game.kills;
+            document.getElementById('hudQuestsDone').textContent = game.questsCompleted;
+            document.getElementById('hudTime').textContent = formatTime(game.time);
+
+            document.getElementById('hudMagAmmo').textContent = p.magAmmo;
+            document.getElementById('hudReserveAmmo').textContent = p.reserveAmmo;
+            document.getElementById('hudReloading').classList.toggle('hidden', !p.reloading);
+
+            document.getElementById('slotMedkit').textContent = p.medkits;
+            document.getElementById('slotPlate').textContent = p.plates;
+            document.getElementById('slotGrenade').textContent = p.grenades;
+
+            const droneStatus = document.getElementById('slotDroneStatus');
+            if (game.playerDrone) {
+                droneStatus.textContent = 'ПОДРЫВ!';
+                droneStatus.className = 'text-xs text-red-400 font-bold animate-pulse';
+            } else if (game.timers.droneCooldown > 0) {
+                droneStatus.textContent = `${Math.ceil(game.timers.droneCooldown)}с`;
+                droneStatus.className = 'text-xs text-gray-400 font-bold';
+            } else {
+                droneStatus.textContent = 'ГОТОВ';
+                droneStatus.className = 'text-xs text-purple-400 font-bold';
+            }
+
+            if (game.quest) {
+                const q = game.quest;
+                const distMeters = Math.round(Math.hypot(p.x - q.targetX, p.y - q.targetY) / 4);
+                document.getElementById('hudQuestDist').textContent = `Дистанция: ${distMeters} м`;
+                const progText = q.type === 'recon'
+                    ? `Разведка: ${q.progress.toFixed(1)} / ${q.maxProgress} сек`
+                    : `Прогресс: ${q.progress} / ${q.maxProgress}`;
+                document.getElementById('hudQuestProgress').textContent = progText;
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 12. ОБРАБОТЧИКИ СОБЫТИЙ КЛАВИАТУРЫ И МЫШИ
+         * ============================================================================
+         */
+        window.addEventListener('keydown', e => {
+            game.keys[e.code] = true;
+            if (!game.running) return;
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                triggerDash();
+            } else if (e.code === 'KeyR') {
+                startReload();
+            } else if (e.code === 'KeyE') {
+                if (game.paused) closeBaseModal();
+                else interactNearby();
+            } else if (e.code === 'Digit1') useSlot(1);
+            else if (e.code === 'Digit2') useSlot(2);
+            else if (e.code === 'Digit3') useSlot(3);
+            else if (e.code === 'Digit4') useSlot(4);
+        });
+
+        window.addEventListener('keyup', e => {
+            game.keys[e.code] = false;
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            game.mouse.x = e.clientX - rect.left;
+            game.mouse.y = e.clientY - rect.top;
+            game.mouse.worldX = game.mouse.x + game.camera.x;
+            game.mouse.worldY = game.mouse.y + game.camera.y;
+        });
+
+        canvas.addEventListener('mousedown', e => {
+            if (e.button === 0) {
+                sound.init();
+                game.mouse.down = true;
+                game.mouse.worldX = game.mouse.x + game.camera.x;
+                game.mouse.worldY = game.mouse.y + game.camera.y;
+            }
+        });
+
+        window.addEventListener('mouseup', e => {
+            if (e.button === 0) game.mouse.down = false;
+        });
+
+        // Главный цикл анимации
+        let lastTime = 0;
+        function mainLoop(timestamp) {
+            const dt = Math.min(0.05, (timestamp - lastTime) / 1000);
+            lastTime = timestamp;
+
+            if (game.player) {
+                game.mouse.worldX = game.mouse.x + game.camera.x;
+                game.mouse.worldY = game.mouse.y + game.camera.y;
+            }
+
+            update(dt);
+            render();
+            requestAnimationFrame(mainLoop);
+        }
+
+        window.onload = function() {
+            updateSetupUI();
+            requestAnimationFrame(mainLoop);
+        };
+    </script>
+</body>
+</html>
